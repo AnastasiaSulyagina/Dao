@@ -12,7 +12,7 @@ public class User implements Serializable {
     private String name;
     @PK
     private int age;
-    private String smth;
+    private String description;
 
     public User() {}
 
@@ -32,10 +32,10 @@ public class User implements Serializable {
     public void setName( String name ) {
         this.name = name;
     }
-    public String getSmth() {
-        return smth;
+    public String getDescription() {
+        return description;
     }
-    public void setSmth( String smth ) {
-        this.smth = smth;
+    public void setDescription( String description ) {
+        this.description = description;
     }
 }

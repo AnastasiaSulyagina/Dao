@@ -4,12 +4,10 @@ import java.io.*;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.sql.*;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
 
 /**
  * Created by anastasia on 23.04.16.
@@ -24,7 +22,59 @@ public class ReflectionJdbcDAOImpl < T > implements ReflectionJdbcDAO< T > {
     public ReflectionJdbcDAOImpl() {
 
     }
+    public ReflectionJdbcDAOImpl(Class<T> obj) {
+        updateMeta(obj);
+    }
+    public boolean areEqual(T a, T b) {
+        Class<T> obj = (Class<T>) a.getClass();
+        for (Field field : obj.getDeclaredFields()) {
+            Object fieldA = getFieldValue(field, a);
+            Object fieldB = getFieldValue(field, b);
+            if (!fieldA.equals(fieldB)) {
+                return false;
+            }
+        }
+        return true;
+    }
 
+    private void createTable() {
+        try {
+            Class.forName("org.sqlite.JDBC");
+            Connection c = DriverManager.getConnection("jdbc:sqlite:/Users/anastasia/Development/Kinopoisk/test.db");
+            Statement stmt = c.createStatement();
+            StringBuilder columns = new StringBuilder();
+            StringBuilder key = new StringBuilder();
+            key.append("PRIMARY KEY(");
+            for (String field : fields) {
+                columns.append(field).append(" BLOB");
+                if (primaryKey.contains(convertFieldForClass(field))) {
+                    key.append(convertFieldForClass(field)).append(",");
+                }
+                columns.append(",");
+            }
+            String sql = "CREATE TABLE IF NOT EXISTS " + tableName + "(" + columns.toString() + key.substring(0, key.length() - 1) + "));";
+            stmt.executeUpdate(sql);
+            stmt.close();
+            c.close();
+        } catch (Exception e) {
+            System.out.println(e.getMessage());
+        }
+    }
+
+    private void updateMeta(Class<T> obj) {
+        Annotation annotation = obj.getAnnotation(Table.class);
+        Table table = (Table) annotation;
+        tableName = table.name();
+        className = obj.getName();
+        for (Field field : obj.getDeclaredFields()) {
+            String fieldName = field.getName();
+            fields.add(convertFieldForDB(fieldName));
+            if (field.isAnnotationPresent(PK.class)) {
+                primaryKey.add(fieldName);
+            }
+        }
+        createTable();
+    }
 
     private String convertFieldForDB(String fieldName) {
         StringBuilder s = new StringBuilder();
@@ -67,44 +117,22 @@ public class ReflectionJdbcDAOImpl < T > implements ReflectionJdbcDAO< T > {
     public void insert(T object) {
         Connection c = null;
         Statement stmt = null;
-
         try {
             Class<T> obj = (Class<T>) object.getClass();
             Class.forName("org.sqlite.JDBC");
             c = DriverManager.getConnection("jdbc:sqlite:/Users/anastasia/Development/Kinopoisk/test.db");
 
-            int fieldsCnt = 0;
             if (!obj.isAnnotationPresent(Table.class)) {
                 throw new Exception("No table found");
             }
             if (tableName == null) {
-                Annotation annotation = obj.getAnnotation(Table.class);
-                Table table = (Table) annotation;
-                tableName = table.name();
-                className = obj.getName();
-                for (Field field : obj.getDeclaredFields()) {
-                    String fieldName = field.getName();
-                    fields.add(convertFieldForDB(fieldName));
-                    if (field.isAnnotationPresent(PK.class)) {
-                        primaryKey.add(fieldName);
-                    }
-                    fieldsCnt++;
-                }
+                updateMeta(obj);
             }
 
-            stmt = c.createStatement();
-            StringBuilder columns = new StringBuilder();
-            for (String field : fields) {
-                columns.append(field).append(" BLOB,");
-            }
-            String sql = "CREATE TABLE IF NOT EXISTS " + tableName + "(" + columns.substring(0, columns.length() - 1) + ");";
-            stmt.executeUpdate(sql);
-            stmt.close();
-
-            sql = "INSERT INTO " + tableName + " (" + String.join(",", fields) + ") " +
+            String sql = "INSERT OR REPLACE INTO " + tableName + " (" + String.join(",", fields) + ") " +
                     "VALUES(" + format(new ArrayList<String>(Collections.nCopies(fields.size(), "")), "?", ",") + ");";
             PreparedStatement pstmt = c.prepareStatement(sql);
-            fieldsCnt = 1;
+            int fieldsCnt = 1;
             for (Field field : obj.getDeclaredFields()) {
                 Object x = getFieldValue(field, object);
                 ByteArrayOutputStream baos = new ByteArrayOutputStream();
@@ -138,6 +166,9 @@ public class ReflectionJdbcDAOImpl < T > implements ReflectionJdbcDAO< T > {
         Class<T> obj = (Class<T>) object.getClass();
         ArrayList<ByteArrayOutputStream> keys = new ArrayList<>();
         try {
+            if (tableName == null) {
+                updateMeta(obj);
+            }
             for (String f : primaryKey) {
 
                 Field field = obj.getDeclaredField(f);
@@ -161,10 +192,12 @@ public class ReflectionJdbcDAOImpl < T > implements ReflectionJdbcDAO< T > {
 
         try {
             Class<T> obj = (Class<T>) object.getClass();
+            if (tableName == null) {
+                updateMeta(obj);
+            }
             Class.forName("org.sqlite.JDBC");
             c = DriverManager.getConnection("jdbc:sqlite:/Users/anastasia/Development/Kinopoisk/test.db");
 
-            //TODO insert correctly
             String sql = "UPDATE " + tableName + " SET " + format(fields, "=?", ",") +
                     " WHERE (" + format(primaryKey, "=?", " AND ") + ");";
             PreparedStatement pstmt = c.prepareStatement(sql);
@@ -188,7 +221,7 @@ public class ReflectionJdbcDAOImpl < T > implements ReflectionJdbcDAO< T > {
             pstmt.close();
             c.close();
         } catch (Exception e) {
-            System.out.println("Wrong object");
+            System.out.println("Can not be updated. Key not found.");
         }
     }
 
@@ -201,7 +234,6 @@ public class ReflectionJdbcDAOImpl < T > implements ReflectionJdbcDAO< T > {
 
             for (int i = 1; i <= columnCount; i++) {
                 String name = rsmd.getColumnName(i);
-
                 InputStream is = rs.getBinaryStream(name);
                 ObjectInputStream ois = new ObjectInputStream(is);
                 Object value = ois.readObject();
@@ -212,8 +244,12 @@ public class ReflectionJdbcDAOImpl < T > implements ReflectionJdbcDAO< T > {
                 String fieldSet = "set" + fieldName.replace(fieldName.charAt(0),
                         Character.toUpperCase(fieldName.charAt(0)));
                 Method method = obj.getMethod(fieldSet, field.getType());
-                Object v = field.getType().cast(value);
-                method.invoke(y, v);
+                if (field.getType().isPrimitive()) {
+                    method.invoke(y, (value));
+                } else {
+                    Object v = field.getType().cast(value);
+                    method.invoke(y, v);
+                }
             }
             return (T)y;
         } catch (Exception e) {
@@ -224,11 +260,15 @@ public class ReflectionJdbcDAOImpl < T > implements ReflectionJdbcDAO< T > {
 
     public void deleteByKey(T key) {
         Connection c = null;
+        Class<T> obj = (Class<T>) key.getClass();
         try {
+            if (tableName == null) {
+                updateMeta(obj);
+            }
             Class.forName("org.sqlite.JDBC");
             c = DriverManager.getConnection("jdbc:sqlite:/Users/anastasia/Development/Kinopoisk/test.db");
 
-            String sql = "DELETE FROM " + tableName + " WHERE " + format(primaryKey, "=?", " AND ") + ";";
+            String sql = "DELETE FROM " + tableName + " WHERE (" + format(primaryKey, "=?", " AND ") + ");";
             PreparedStatement pstmt = c.prepareStatement(sql);
 
             ArrayList<ByteArrayOutputStream> keys = getObjectByKey(key);
@@ -236,26 +276,26 @@ public class ReflectionJdbcDAOImpl < T > implements ReflectionJdbcDAO< T > {
                 pstmt.setBytes(i + 1, keys.get(i).toByteArray());
             }
 
-            ResultSet rs = pstmt.executeQuery();
-            rs.next();
-            T x = getObject(rs);
-
-            rs.close();
+            pstmt.executeUpdate();
             pstmt.close();
             c.close();
         } catch ( Exception e ) {
-            System.err.println("No object matching key found");
+            System.err.println("Can not be deleted. No object matching key found");
         }
     }
 
 
     public T selectByKey(T key) {
         Connection c = null;
+        Class<T> obj = (Class<T>) key.getClass();
         try {
+            if (tableName == null) {
+                updateMeta(obj);
+            }
             Class.forName("org.sqlite.JDBC");
             c = DriverManager.getConnection("jdbc:sqlite:/Users/anastasia/Development/Kinopoisk/test.db");
 
-            String sql =  "SELECT * FROM " + tableName + " WHERE " + format(primaryKey, "=?", " AND ") + ";";
+            String sql =  "SELECT * FROM " + tableName + " WHERE( " + format(primaryKey, "=?", " AND ") + ");";
             PreparedStatement pstmt = c.prepareStatement(sql);
 
             ArrayList<ByteArrayOutputStream> keys = getObjectByKey(key);
@@ -276,6 +316,8 @@ public class ReflectionJdbcDAOImpl < T > implements ReflectionJdbcDAO< T > {
         return null;
     }
 
+    // Would not work if called right after initializing (would not know from what table to select).
+    // Please either call Class<T> constructor or do any other operation befor calling selectAll
     public List< T > selectAll() {
         List<T> objects = new ArrayList<>();
         Connection c = null;
@@ -284,7 +326,6 @@ public class ReflectionJdbcDAOImpl < T > implements ReflectionJdbcDAO< T > {
             Class.forName("org.sqlite.JDBC");
             c = DriverManager.getConnection("jdbc:sqlite:/Users/anastasia/Development/Kinopoisk/test.db");
 
-            this.getClass().getG
             stmt = c.createStatement();
             ResultSet rs = stmt.executeQuery( "SELECT * FROM " + tableName + ";");
             while ( rs.next() ) {
