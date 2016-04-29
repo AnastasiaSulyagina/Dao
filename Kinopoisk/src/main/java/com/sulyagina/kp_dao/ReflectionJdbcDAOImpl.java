@@ -19,12 +19,12 @@ public class ReflectionJdbcDAOImpl < T > implements ReflectionJdbcDAO< T > {
     private String tableName;
     private String className;
 
-    public ReflectionJdbcDAOImpl() {
+    public ReflectionJdbcDAOImpl() {}
 
-    }
     public ReflectionJdbcDAOImpl(Class<T> obj) {
         updateMeta(obj);
     }
+
     public boolean areEqual(T a, T b) {
         Class<T> obj = (Class<T>) a.getClass();
         for (Field field : obj.getDeclaredFields()) {
@@ -40,7 +40,7 @@ public class ReflectionJdbcDAOImpl < T > implements ReflectionJdbcDAO< T > {
     private void createTable() {
         try {
             Class.forName("org.sqlite.JDBC");
-            Connection c = DriverManager.getConnection("jdbc:sqlite:/Users/anastasia/Development/Kinopoisk/test.db");
+            Connection c = DriverManager.getConnection("jdbc:sqlite:test.db");
             Statement stmt = c.createStatement();
             StringBuilder columns = new StringBuilder();
             StringBuilder key = new StringBuilder();
@@ -52,7 +52,8 @@ public class ReflectionJdbcDAOImpl < T > implements ReflectionJdbcDAO< T > {
                 }
                 columns.append(",");
             }
-            String sql = "CREATE TABLE IF NOT EXISTS " + tableName + "(" + columns.toString() + key.substring(0, key.length() - 1) + "));";
+            String sql = "CREATE TABLE IF NOT EXISTS " + tableName + "(" + columns.toString() +
+                    key.substring(0, key.length() - 1) + "));";
             stmt.executeUpdate(sql);
             stmt.close();
             c.close();
@@ -116,11 +117,10 @@ public class ReflectionJdbcDAOImpl < T > implements ReflectionJdbcDAO< T > {
 
     public void insert(T object) {
         Connection c = null;
-        Statement stmt = null;
         try {
             Class<T> obj = (Class<T>) object.getClass();
             Class.forName("org.sqlite.JDBC");
-            c = DriverManager.getConnection("jdbc:sqlite:/Users/anastasia/Development/Kinopoisk/test.db");
+            c = DriverManager.getConnection("jdbc:sqlite:test.db");
 
             if (!obj.isAnnotationPresent(Table.class)) {
                 throw new Exception("No table found");
@@ -132,6 +132,7 @@ public class ReflectionJdbcDAOImpl < T > implements ReflectionJdbcDAO< T > {
             String sql = "INSERT OR REPLACE INTO " + tableName + " (" + String.join(",", fields) + ") " +
                     "VALUES(" + format(new ArrayList<String>(Collections.nCopies(fields.size(), "")), "?", ",") + ");";
             PreparedStatement pstmt = c.prepareStatement(sql);
+
             int fieldsCnt = 1;
             for (Field field : obj.getDeclaredFields()) {
                 Object x = getFieldValue(field, object);
@@ -189,14 +190,13 @@ public class ReflectionJdbcDAOImpl < T > implements ReflectionJdbcDAO< T > {
 
     public void update(T object) {
         Connection c = null;
-
         try {
             Class<T> obj = (Class<T>) object.getClass();
             if (tableName == null) {
                 updateMeta(obj);
             }
             Class.forName("org.sqlite.JDBC");
-            c = DriverManager.getConnection("jdbc:sqlite:/Users/anastasia/Development/Kinopoisk/test.db");
+            c = DriverManager.getConnection("jdbc:sqlite:test.db");
 
             String sql = "UPDATE " + tableName + " SET " + format(fields, "=?", ",") +
                     " WHERE (" + format(primaryKey, "=?", " AND ") + ");";
@@ -266,7 +266,7 @@ public class ReflectionJdbcDAOImpl < T > implements ReflectionJdbcDAO< T > {
                 updateMeta(obj);
             }
             Class.forName("org.sqlite.JDBC");
-            c = DriverManager.getConnection("jdbc:sqlite:/Users/anastasia/Development/Kinopoisk/test.db");
+            c = DriverManager.getConnection("jdbc:sqlite:test.db");
 
             String sql = "DELETE FROM " + tableName + " WHERE (" + format(primaryKey, "=?", " AND ") + ");";
             PreparedStatement pstmt = c.prepareStatement(sql);
@@ -293,7 +293,7 @@ public class ReflectionJdbcDAOImpl < T > implements ReflectionJdbcDAO< T > {
                 updateMeta(obj);
             }
             Class.forName("org.sqlite.JDBC");
-            c = DriverManager.getConnection("jdbc:sqlite:/Users/anastasia/Development/Kinopoisk/test.db");
+            c = DriverManager.getConnection("jdbc:sqlite:test.db");
 
             String sql =  "SELECT * FROM " + tableName + " WHERE( " + format(primaryKey, "=?", " AND ") + ");";
             PreparedStatement pstmt = c.prepareStatement(sql);
@@ -324,7 +324,7 @@ public class ReflectionJdbcDAOImpl < T > implements ReflectionJdbcDAO< T > {
         Statement stmt = null;
         try {
             Class.forName("org.sqlite.JDBC");
-            c = DriverManager.getConnection("jdbc:sqlite:/Users/anastasia/Development/Kinopoisk/test.db");
+            c = DriverManager.getConnection("jdbc:sqlite:test.db");
 
             stmt = c.createStatement();
             ResultSet rs = stmt.executeQuery( "SELECT * FROM " + tableName + ";");
